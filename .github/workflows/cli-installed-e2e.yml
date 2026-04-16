@@ -164,7 +164,7 @@ jobs:
           run_date="$(date -u +%F)"
           stamp="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
           round_name="${SUITE}-${stamp}"
-          report_dir="${GITHUB_WORKSPACE}/output/evals/${run_date}/${round_name}"
+          report_dir="${GITHUB_WORKSPACE}/source/output/evals/${run_date}/${round_name}"
           machine_id="${FINGERPRINT_SEED}-${run_date}"
           mkdir -p "${report_dir}"
           echo "run_date=${run_date}" >> "$GITHUB_OUTPUT"

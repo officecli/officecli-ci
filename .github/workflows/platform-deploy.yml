@@ -133,8 +133,11 @@ jobs:
       - name: Resolve target deploy tag
         id: target
         shell: bash
+        env:
+          SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
         run: |
           set -euo pipefail
+          git -C source remote set-url origin "https://x-access-token:${SOURCE_REPO_TOKEN}@github.com/${SOURCE_REPO}.git"
           git -C source fetch --tags --force
           release_tag=""
           if [ -n "${{ inputs.release_tag }}" ]; then
