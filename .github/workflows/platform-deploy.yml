@@ -39,8 +39,8 @@ jobs:
           PLATFORM_PREVIEW_OBJECT_SECRET_KEY: ${{ secrets.PLATFORM_PREVIEW_OBJECT_SECRET_KEY || '' }}
           PLATFORM_OFFICESDK_JWT_SECRET: ${{ secrets.PLATFORM_OFFICESDK_JWT_SECRET || '' }}
           PLATFORM_SSH_PRIVATE_KEY: ${{ secrets.PLATFORM_SSH_PRIVATE_KEY || secrets.SSH_PRIVATE_KEY || '' }}
-          PLATFORM_PREVIEW_OBJECT_ENDPOINT: ${{ vars.PLATFORM_PREVIEW_OBJECT_ENDPOINT || '' }}
-          PLATFORM_OFFICESDK_HOST: ${{ vars.PLATFORM_OFFICESDK_HOST || '' }}
+          PLATFORM_PREVIEW_OBJECT_ENDPOINT: ${{ secrets.PLATFORM_PREVIEW_OBJECT_ENDPOINT || vars.PLATFORM_PREVIEW_OBJECT_ENDPOINT || '' }}
+          PLATFORM_OFFICESDK_HOST: ${{ secrets.PLATFORM_OFFICESDK_HOST || vars.PLATFORM_OFFICESDK_HOST || '' }}
         run: |
           missing=()
           if [ -z "${PLATFORM_APP_SESSION_SECRET}" ]; then
@@ -89,27 +89,27 @@ jobs:
     if: ${{ needs.preflight.outputs.ready == 'true' }}
     runs-on: ubuntu-latest
     env:
-      SERVER_HOST: ${{ vars.PLATFORM_SERVER_HOST || '18.141.191.80' }}
-      SERVER_USER: ${{ vars.PLATFORM_SERVER_USER || 'ubuntu' }}
-      SSH_PORT: ${{ vars.PLATFORM_SSH_PORT || '22' }}
-      REMOTE_WORKDIR: ${{ vars.PLATFORM_REMOTE_WORKDIR || '/opt/officecli-platform' }}
-      REMOTE_SITE_DIR: ${{ vars.PLATFORM_REMOTE_SITE_DIR || '/var/www/officecli.io/dist' }}
-      REMOTE_APP_DIR: ${{ vars.PLATFORM_REMOTE_APP_DIR || '/var/www/platform.officecli.io/app' }}
-      REMOTE_ADMIN_DIR: ${{ vars.PLATFORM_REMOTE_ADMIN_DIR || '/var/www/platform.officecli.io/admin' }}
-      KUBE_NAMESPACE: ${{ vars.PLATFORM_KUBE_NAMESPACE || 'officecli' }}
-      DEPLOYMENT_NAME: ${{ vars.PLATFORM_DEPLOYMENT_NAME || 'officecli-platform' }}
-      CONTAINER_NAME: ${{ vars.PLATFORM_CONTAINER_NAME || 'platform' }}
-      IMAGE_REPO: ${{ vars.PLATFORM_IMAGE_REPO || 'docker.io/library/officecli-platform' }}
-      SECRET_NAME: ${{ vars.PLATFORM_SECRET_NAME || 'officecli-platform-env' }}
+      SERVER_HOST: ${{ secrets.PLATFORM_SERVER_HOST || vars.PLATFORM_SERVER_HOST || '18.141.191.80' }}
+      SERVER_USER: ${{ secrets.PLATFORM_SERVER_USER || vars.PLATFORM_SERVER_USER || 'ubuntu' }}
+      SSH_PORT: ${{ secrets.PLATFORM_SSH_PORT || vars.PLATFORM_SSH_PORT || '22' }}
+      REMOTE_WORKDIR: ${{ secrets.PLATFORM_REMOTE_WORKDIR || vars.PLATFORM_REMOTE_WORKDIR || '/opt/officecli-platform' }}
+      REMOTE_SITE_DIR: ${{ secrets.PLATFORM_REMOTE_SITE_DIR || vars.PLATFORM_REMOTE_SITE_DIR || '/var/www/officecli.io/dist' }}
+      REMOTE_APP_DIR: ${{ secrets.PLATFORM_REMOTE_APP_DIR || vars.PLATFORM_REMOTE_APP_DIR || '/var/www/platform.officecli.io/app' }}
+      REMOTE_ADMIN_DIR: ${{ secrets.PLATFORM_REMOTE_ADMIN_DIR || vars.PLATFORM_REMOTE_ADMIN_DIR || '/var/www/platform.officecli.io/admin' }}
+      KUBE_NAMESPACE: ${{ secrets.PLATFORM_KUBE_NAMESPACE || vars.PLATFORM_KUBE_NAMESPACE || 'officecli' }}
+      DEPLOYMENT_NAME: ${{ secrets.PLATFORM_DEPLOYMENT_NAME || vars.PLATFORM_DEPLOYMENT_NAME || 'officecli-platform' }}
+      CONTAINER_NAME: ${{ secrets.PLATFORM_CONTAINER_NAME || vars.PLATFORM_CONTAINER_NAME || 'platform' }}
+      IMAGE_REPO: ${{ secrets.PLATFORM_IMAGE_REPO || vars.PLATFORM_IMAGE_REPO || 'docker.io/library/officecli-platform' }}
+      SECRET_NAME: ${{ secrets.PLATFORM_SECRET_NAME || vars.PLATFORM_SECRET_NAME || 'officecli-platform-env' }}
       APP_ENV: ${{ vars.PLATFORM_APP_ENV || 'production' }}
       SITE_BASE_URL: ${{ vars.PLATFORM_SITE_BASE_URL || 'https://officecli.io' }}
       PLATFORM_BASE_URL: ${{ vars.PLATFORM_PLATFORM_BASE_URL || 'https://platform.officecli.io' }}
       APP_SESSION_TTL: ${{ vars.PLATFORM_APP_SESSION_TTL || '24h' }}
       APP_SESSION_COOKIE_DOMAIN: ${{ vars.PLATFORM_APP_SESSION_COOKIE_DOMAIN || '.officecli.io' }}
-      PREVIEW_OBJECT_ENDPOINT: ${{ vars.PLATFORM_PREVIEW_OBJECT_ENDPOINT }}
+      PREVIEW_OBJECT_ENDPOINT: ${{ secrets.PLATFORM_PREVIEW_OBJECT_ENDPOINT || vars.PLATFORM_PREVIEW_OBJECT_ENDPOINT }}
       PREVIEW_OBJECT_BUCKET: ${{ vars.PLATFORM_PREVIEW_OBJECT_BUCKET || 'officecli-preview' }}
       PREVIEW_OBJECT_USE_SSL: ${{ vars.PLATFORM_PREVIEW_OBJECT_USE_SSL || 'false' }}
-      OFFICESDK_HOST: ${{ vars.PLATFORM_OFFICESDK_HOST }}
+      OFFICESDK_HOST: ${{ secrets.PLATFORM_OFFICESDK_HOST || vars.PLATFORM_OFFICESDK_HOST }}
       OFFICESDK_ENDPOINT: ${{ vars.PLATFORM_OFFICESDK_ENDPOINT || 'https://officecli.io/sdk/turbo-ai' }}
       APP_SESSION_SECRET: ${{ secrets.PLATFORM_APP_SESSION_SECRET }}
       LICENSE_PROOF_SEED: ${{ secrets.PLATFORM_LICENSE_PROOF_SEED }}
@@ -176,6 +176,40 @@ jobs:
           set -euo pipefail
           git -C source checkout --detach "${{ steps.target.outputs.release_tag }}"
 
+      - name: Prepare SSH
+        if: steps.target.outputs.should_run == 'true'
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PLATFORM_SSH_PRIVATE_KEY || secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PLATFORM_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          if [ -n "${SSH_KNOWN_HOSTS}" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${SSH_PORT}" "${SERVER_HOST}" >> ~/.ssh/known_hosts
+          fi
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host platform-prod
+            HostName ${SERVER_HOST}
+            User ${SERVER_USER}
+            Port ${SSH_PORT}
+            IdentityFile ~/.ssh/id_ed25519
+            IdentitiesOnly yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Verify SSH access
+        if: steps.target.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR platform-prod 'exit 0'
+
       - name: Setup Go
         if: steps.target.outputs.should_run == 'true'
         uses: actions/setup-go@v6.4.0
@@ -208,24 +242,6 @@ jobs:
         if: steps.target.outputs.should_run == 'true'
         working-directory: source/platform/web/site
         run: npm ci
-
-      - name: Prepare SSH
-        if: steps.target.outputs.should_run == 'true'
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.PLATFORM_SSH_PRIVATE_KEY || secrets.SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.PLATFORM_SSH_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          if [ -n "${SSH_KNOWN_HOSTS}" ]; then
-            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          else
-            ssh-keyscan -p "${SSH_PORT}" "${SERVER_HOST}" >> ~/.ssh/known_hosts
-          fi
-          chmod 644 ~/.ssh/known_hosts
 
       - name: Prepare production secret env file
         if: steps.target.outputs.should_run == 'true'

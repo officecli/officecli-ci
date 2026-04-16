@@ -44,6 +44,8 @@ Optional secrets for gated workflows:
 - `SSH_PRIVATE_KEY`
 - `PLATFORM_SSH_KNOWN_HOSTS`
 
+For public workflow logs, prefer storing production host, SSH, remote path, Kubernetes, and other internal deployment values as Actions secrets, even when the workflows support same-named repository variables as a fallback.
+
 ## Optional variables
 
 - `CLI_PUBLISH_LATEST_ENABLED`
