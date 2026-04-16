@@ -48,9 +48,50 @@ env:
   SOURCE_DEFAULT_BRANCH: main
 
 jobs:
+  preflight:
+    name: Resolve Optional Secret Gates
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.flags.outputs.ready }}
+      missing: ${{ steps.flags.outputs.missing }}
+    steps:
+      - name: Resolve flags
+        id: flags
+        env:
+          OFFICE_CLI_LLM_BASE_URL: ${{ secrets.OFFICE_CLI_LLM_BASE_URL || '' }}
+          OFFICE_CLI_LLM_API_KEY: ${{ secrets.OFFICE_CLI_LLM_API_KEY || '' }}
+          OFFICE_CLI_PUBLISH_API_KEY: ${{ secrets.OFFICE_CLI_PUBLISH_API_KEY || secrets.OFFICE_CLI_LICENSE_API_KEY || '' }}
+        run: |
+          missing=()
+          if [ -z "${OFFICE_CLI_LLM_BASE_URL}" ]; then
+            missing+=("OFFICE_CLI_LLM_BASE_URL")
+          fi
+          if [ -z "${OFFICE_CLI_LLM_API_KEY}" ]; then
+            missing+=("OFFICE_CLI_LLM_API_KEY")
+          fi
+          if [ -z "${OFFICE_CLI_PUBLISH_API_KEY}" ]; then
+            missing+=("OFFICE_CLI_PUBLISH_API_KEY or OFFICE_CLI_LICENSE_API_KEY")
+          fi
+          ready=true
+          if [ "${#missing[@]}" -gt 0 ]; then
+            ready=false
+          fi
+          echo "ready=${ready}" >> "$GITHUB_OUTPUT"
+          echo "missing=$(IFS=', '; echo "${missing[*]}")" >> "$GITHUB_OUTPUT"
+
+      - name: Append preflight summary
+        run: |
+          if [ "${{ steps.flags.outputs.ready }}" = "true" ]; then
+            echo "CLI Installed E2E prerequisites are configured." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "CLI Installed E2E skipped because required configuration is missing: ${{ steps.flags.outputs.missing }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   installed_e2e:
     name: Install And Evaluate OfficeCLI
-    if: ${{ github.event_name == 'workflow_dispatch' || vars.CLI_INSTALLED_E2E_ENABLED == 'true' }}
+    needs:
+      - preflight
+    if: ${{ needs.preflight.outputs.ready == 'true' && (github.event_name == 'workflow_dispatch' || vars.CLI_INSTALLED_E2E_ENABLED == 'true') }}
     runs-on: ubuntu-latest
     container:
       image: ubuntu:24.04
