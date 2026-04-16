@@ -160,6 +160,12 @@ jobs:
           go-version-file: source/go.mod
           cache-dependency-path: source/go.mod
 
+      - name: Setup Node
+        if: steps.target.outputs.should_run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Run tests
         if: steps.target.outputs.should_run == 'true'
         working-directory: source
@@ -205,6 +211,13 @@ jobs:
           EOF
           cli_license_proof_public_key="$(go run "$RUNNER_TEMP/derive_license_proof_public_key.go")"
           echo "CLI_LICENSE_PROOF_PUBLIC_KEY=${cli_license_proof_public_key}" >> "$GITHUB_ENV"
+
+      - name: Verify npm wrapper version matches release tag
+        if: steps.target.outputs.should_run == 'true'
+        working-directory: source/packages/npm/officecli
+        env:
+          RELEASE_TAG: ${{ steps.target.outputs.release_tag }}
+        run: npm run check:release-version
 
       - name: Delete existing public dist release for reruns
         if: steps.target.outputs.should_run == 'true'
