@@ -73,6 +73,8 @@ jobs:
     if: ${{ needs.preflight.outputs.ready == 'true' }}
     runs-on: ubuntu-latest
     env:
+      PUBLIC_DIST_REPO_OWNER: ${{ vars.PUBLIC_DIST_REPO_OWNER || 'officecli' }}
+      PUBLIC_DIST_REPO_NAME: ${{ vars.PUBLIC_DIST_REPO_NAME || 'officecli-dist' }}
       PUBLIC_DIST_REPO: ${{ vars.PUBLIC_DIST_REPO || 'officecli/officecli-dist' }}
       PUBLIC_DIST_DEFAULT_BRANCH: ${{ vars.PUBLIC_DIST_DEFAULT_BRANCH || 'main' }}
       HOMEBREW_TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO || 'officecli/homebrew-officecli' }}
