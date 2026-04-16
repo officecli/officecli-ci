@@ -92,7 +92,6 @@ jobs:
             ca-certificates \
             curl \
             git \
-            golang-go \
             jq \
             python3 \
             tar \
@@ -109,6 +108,14 @@ jobs:
           path: source
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: source/go.mod
+          cache-dependency-path: |
+            source/go.mod
+            source/go.sum
 
       - name: Resolve run metadata
         id: meta
