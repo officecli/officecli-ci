@@ -54,6 +54,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ubuntu:24.04
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
     env:
