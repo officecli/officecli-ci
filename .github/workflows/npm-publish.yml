@@ -24,6 +24,8 @@ permissions:
 env:
   SOURCE_REPO: officecli/officecli
   SOURCE_DEFAULT_BRANCH: main
+  PUBLIC_NPM_REPO: officecli/officecli-npm
+  PUBLIC_NPM_DEFAULT_BRANCH: main
 
 jobs:
   publish:
@@ -78,6 +80,27 @@ jobs:
         working-directory: packages/npm/officecli
         run: npm pack
 
-      - name: Publish wrapper
-        working-directory: packages/npm/officecli
-        run: npm publish --access public
+      - name: Sync public npm repository
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_NPM_REPO_TOKEN }}
+          PUBLIC_NPM_REPO: ${{ env.PUBLIC_NPM_REPO }}
+          PUBLIC_NPM_DEFAULT_BRANCH: ${{ env.PUBLIC_NPM_DEFAULT_BRANCH }}
+        run: bash ./scripts/sync-public-npm-repo.sh
+
+      - name: Wait for npm package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_version="${{ steps.meta.outputs.package_version }}"
+          for attempt in $(seq 1 30); do
+            current="$(npm view officecli version 2>/dev/null || true)"
+            if [ "${current}" = "${target_version}" ]; then
+              echo "npm package officecli@${target_version} is available"
+              exit 0
+            fi
+            echo "waiting for npm package officecli@${target_version} (${attempt}/30); current=${current:-missing}"
+            sleep 10
+          done
+          echo "timed out waiting for npm package officecli@${target_version}" >&2
+          exit 1
