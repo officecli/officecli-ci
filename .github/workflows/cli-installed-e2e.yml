@@ -192,9 +192,10 @@ jobs:
           else
             DIST_REPO="${DIST_REPO}" VERSION="${VERSION}" INSTALL_DIR="/usr/local/bin" bash ./scripts/install-officecli.sh
           fi
-          installed_version="$(officecli --version | grep -Eo 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+          version_output="$(officecli --version | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
+          installed_version="$(printf '%s\n' "${version_output}" | grep -Eo 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
           if [ -z "${installed_version}" ]; then
-            installed_version="$(officecli --version | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | cut -c1-120)"
+            installed_version="$(printf '%s' "${version_output}" | cut -c1-120)"
           fi
           echo "installed_version=${installed_version}" >> "$GITHUB_OUTPUT"
 
