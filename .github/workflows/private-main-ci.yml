@@ -1,0 +1,253 @@
+name: Private Main CI
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Private repo ref to test. Empty means latest main.'
+        required: false
+        default: ''
+        type: string
+      run_publish_latest:
+        description: 'Also run rolling latest publish when publish secrets are present.'
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/private-main-ci.yml'
+      - 'README.md'
+
+concurrency:
+  group: private-main-ci-${{ github.event_name }}-${{ github.event.schedule || inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  SOURCE_REPO: officecli/officecli
+  SOURCE_DEFAULT_BRANCH: main
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    env:
+      LATEST_TAG: latest
+      PUBLIC_DIST_REPO: ${{ vars.PUBLIC_DIST_REPO || 'officecli/officecli-dist' }}
+      PUBLIC_DIST_DEFAULT_BRANCH: ${{ vars.PUBLIC_DIST_DEFAULT_BRANCH || 'main' }}
+      HOMEBREW_TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO || 'officecli/homebrew-officecli' }}
+      CLI_EMBEDDED_PUBLISH_BASE_URL: ${{ vars.CLI_EMBEDDED_PUBLISH_BASE_URL || 'https://platform.officecli.io' }}
+      CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID: ${{ vars.CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID || 'officecli-cli' }}
+    steps:
+      - name: Checkout public CI repo
+        uses: actions/checkout@v6.0.2
+
+      - name: Checkout private source repo
+        uses: actions/checkout@v6.0.2
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ inputs.ref != '' && inputs.ref || env.SOURCE_DEFAULT_BRANCH }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve scope
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(git -C source rev-parse HEAD)"
+          prev_sha="$(tr -d '\n' < .state/private-main-sha.txt || true)"
+          manual=false
+          if [ -n "${{ inputs.ref }}" ]; then
+            manual=true
+          fi
+          should_run=true
+          cli=false
+          platform=false
+          publish=false
+          if [ "${manual}" = false ] && [ -n "${prev_sha}" ] && [ "${prev_sha}" = "${source_sha}" ]; then
+            should_run=false
+          fi
+          if [ "${should_run}" = true ]; then
+            if [ "${manual}" = true ] || [ -z "${prev_sha}" ]; then
+              cli=true
+              platform=true
+              publish=true
+            else
+              changed="$(git -C source diff --name-only "${prev_sha}" "${source_sha}" || true)"
+              if printf '%s\n' "${changed}" | rg -q '^(cmd/|engine/|internal/|pkg/|examples/|scripts/|go\.mod|Makefile|\.goreleaser\.dist\.yml|\.github/workflows/cli-)'; then
+                cli=true
+              fi
+              if printf '%s\n' "${changed}" | rg -q '^(platform/|\.github/workflows/platform-ci\.yml)'; then
+                platform=true
+              fi
+              if printf '%s\n' "${changed}" | rg -q '^(cmd/|engine/|internal/|pkg/|go\.mod|Makefile|scripts/build-latest-release-assets\.sh|scripts/install-officecli\.sh|scripts/sync-public-dist-repo\.sh|\.github/workflows/cli-publish-latest\.yml)'; then
+                publish=true
+              fi
+            fi
+          fi
+          echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
+          echo "prev_sha=${prev_sha}" >> "$GITHUB_OUTPUT"
+          echo "manual=${manual}" >> "$GITHUB_OUTPUT"
+          echo "should_run=${should_run}" >> "$GITHUB_OUTPUT"
+          echo "cli=${cli}" >> "$GITHUB_OUTPUT"
+          echo "platform=${platform}" >> "$GITHUB_OUTPUT"
+          echo "publish=${publish}" >> "$GITHUB_OUTPUT"
+
+      - name: Stop when private main SHA is unchanged
+        if: steps.scope.outputs.should_run != 'true'
+        run: echo "No private main change detected."
+
+      - name: Setup Go
+        if: steps.scope.outputs.should_run == 'true'
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version: '1.25.0'
+          cache-dependency-path: |
+            source/go.mod
+            source/platform/go.sum
+            source/go.sum
+
+      - name: Setup Node
+        if: steps.scope.outputs.platform == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run CLI tests and build
+        if: steps.scope.outputs.cli == 'true' || steps.scope.outputs.publish == 'true'
+        working-directory: source
+        run: |
+          go test ./...
+          python3 ./scripts/check-no-han.py
+          make build
+          bash -n skills/officecli/env-common.sh
+          bash -n skills/officecli/check-officecli-env.sh
+          bash -n skills/officecli/fix-officecli-env.sh
+          bash -n skills/openclaw-officecli/env-common.sh
+          bash -n skills/openclaw-officecli/check-officecli-env.sh
+          bash -n skills/openclaw-officecli/fix-officecli-env.sh
+          bash -n scripts/install-officecli.sh
+          bash -n scripts/build-latest-release-assets.sh
+          bash -n scripts/install-openclaw-skill.sh
+          python3 -m py_compile scripts/eval_ppt_quality.py
+          python3 -m py_compile scripts/notify-cli-e2e.py
+          bash -n scripts/sync-public-dist-repo.sh
+          bash -n scripts/sync-homebrew-tap.sh
+          bash -n scripts/sync-public-npm-repo.sh
+          bash -n scripts/sync-public-skills-repo.sh
+          bash ./scripts/test-skill-officecli-env.sh
+
+      - name: Run platform tests and build
+        if: steps.scope.outputs.platform == 'true'
+        working-directory: source/platform
+        run: |
+          go test ./...
+          make build
+
+      - name: Run platform web tests and builds
+        if: steps.scope.outputs.platform == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for app in admin app site; do
+            cd "${GITHUB_WORKSPACE}/source/platform/web/${app}"
+            npm ci
+            npm test -- --run
+            npm run build
+          done
+
+      - name: Check publish prerequisites
+        id: publish_ready
+        if: steps.scope.outputs.publish == 'true'
+        shell: bash
+        env:
+          PLATFORM_LICENSE_PROOF_SEED: ${{ secrets.PLATFORM_LICENSE_PROOF_SEED || '' }}
+          CLI_EMBEDDED_PUBLISH_AUTH_KEY: ${{ secrets.CLI_EMBEDDED_PUBLISH_AUTH_KEY || '' }}
+          PUBLIC_DIST_REPO_TOKEN: ${{ secrets.PUBLIC_DIST_REPO_TOKEN || '' }}
+        run: |
+          ready=true
+          for value in "$PLATFORM_LICENSE_PROOF_SEED" "$CLI_EMBEDDED_PUBLISH_AUTH_KEY" "$PUBLIC_DIST_REPO_TOKEN"; do
+            if [ -z "$value" ]; then
+              ready=false
+            fi
+          done
+          echo "ready=${ready}" >> "$GITHUB_OUTPUT"
+
+      - name: Derive embedded license proof public key
+        if: steps.scope.outputs.publish == 'true' && steps.publish_ready.outputs.ready == 'true' && (inputs.run_publish_latest || vars.CLI_PUBLISH_LATEST_ENABLED == 'true')
+        working-directory: source
+        env:
+          PLATFORM_LICENSE_PROOF_SEED: ${{ secrets.PLATFORM_LICENSE_PROOF_SEED }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/derive_license_proof_public_key.go" <<'EOF'
+          package main
+
+          import (
+            "crypto/ed25519"
+            "encoding/base64"
+            "fmt"
+            "os"
+            "strings"
+          )
+
+          func main() {
+            seedValue := strings.TrimSpace(os.Getenv("PLATFORM_LICENSE_PROOF_SEED"))
+            if seedValue == "" {
+              panic("missing PLATFORM_LICENSE_PROOF_SEED")
+            }
+            seed, err := base64.RawURLEncoding.DecodeString(seedValue)
+            if err != nil {
+              panic(err)
+            }
+            privateKey := ed25519.NewKeyFromSeed(seed)
+            fmt.Println(base64.RawURLEncoding.EncodeToString(privateKey.Public().(ed25519.PublicKey)))
+          }
+          EOF
+          cli_license_proof_public_key="$(go run "$RUNNER_TEMP/derive_license_proof_public_key.go")"
+          echo "CLI_LICENSE_PROOF_PUBLIC_KEY=${cli_license_proof_public_key}" >> "$GITHUB_ENV"
+
+      - name: Publish rolling latest CLI
+        if: steps.scope.outputs.publish == 'true' && steps.publish_ready.outputs.ready == 'true' && (inputs.run_publish_latest || vars.CLI_PUBLISH_LATEST_ENABLED == 'true')
+        working-directory: source
+        env:
+          VERSION_LABEL: latest-${{ steps.scope.outputs.source_sha }}
+          COMMIT: ${{ steps.scope.outputs.source_sha }}
+          GH_TOKEN: ${{ secrets.PUBLIC_DIST_REPO_TOKEN }}
+          PLATFORM_LICENSE_PROOF_SEED: ${{ secrets.PLATFORM_LICENSE_PROOF_SEED }}
+          CLI_EMBEDDED_PUBLISH_AUTH_KEY: ${{ secrets.CLI_EMBEDDED_PUBLISH_AUTH_KEY }}
+        run: |
+          bash ./scripts/build-latest-release-assets.sh
+          gh release delete "${LATEST_TAG}" -R "${PUBLIC_DIST_REPO}" --yes --cleanup-tag || true
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${PUBLIC_DIST_REPO}.git" ":refs/tags/${LATEST_TAG}" || true
+          gh release create "${LATEST_TAG}" \
+            -R "${PUBLIC_DIST_REPO}" \
+            --title "latest" \
+            --notes "Rolling latest build from main (${COMMIT})." \
+            dist/latest/officecli_latest_*.tar.gz \
+            dist/latest/checksums.txt
+          DIST_REPO="${PUBLIC_DIST_REPO}" \
+          DIST_DEFAULT_BRANCH="${PUBLIC_DIST_DEFAULT_BRANCH}" \
+          HOMEBREW_TAP_REPO="${HOMEBREW_TAP_REPO}" \
+          bash ./scripts/sync-public-dist-repo.sh
+
+      - name: Persist tested private main SHA
+        if: success() && steps.scope.outputs.should_run == 'true' && steps.scope.outputs.manual != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${{ steps.scope.outputs.source_sha }}" > .state/private-main-sha.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .state/private-main-sha.txt
+          git diff --cached --quiet && exit 0
+          git commit -m "ci: track private main ${GITHUB_SHA} [skip ci]"
+          git push

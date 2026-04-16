@@ -1,0 +1,219 @@
+name: CLI Installed E2E
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      install_source:
+        description: 'Install source: released dist binary or current repository build'
+        required: false
+        default: current_build
+        type: choice
+        options:
+          - current_build
+          - release
+      license_mode:
+        description: 'License mode: free trial quota or paid API key'
+        required: false
+        default: free
+        type: choice
+        options:
+          - free
+          - paid
+      version:
+        description: 'Release tag to install, e.g. v1.2.3 or latest'
+        required: false
+        default: latest
+        type: string
+      suite:
+        description: 'Evaluation suite'
+        required: false
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - full
+
+concurrency:
+  group: cli-installed-e2e-${{ github.event.schedule || inputs.install_source || inputs.license_mode || inputs.version || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  SOURCE_REPO: officecli/officecli
+  SOURCE_DEFAULT_BRANCH: main
+
+jobs:
+  installed_e2e:
+    name: Install And Evaluate OfficeCLI
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.CLI_INSTALLED_E2E_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
+    permissions:
+      contents: read
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+      DIST_REPO: ${{ vars.CLI_E2E_DIST_REPO || 'officecli/officecli-dist' }}
+      INSTALL_SOURCE: ${{ github.event_name == 'workflow_dispatch' && inputs.install_source || 'current_build' }}
+      LICENSE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.license_mode || 'free' }}
+      FINGERPRINT_SEED: officecli-cli-installed-e2e
+      EVAL_RETRY_MAX_ATTEMPTS: '3'
+      EVAL_RETRY_SLEEP_SECONDS: '20'
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || vars.CLI_INSTALLED_E2E_DEFAULT_VERSION || 'latest' }}
+      SUITE: ${{ github.event_name == 'workflow_dispatch' && inputs.suite || vars.CLI_INSTALLED_E2E_DEFAULT_SUITE || 'smoke' }}
+      REPORT_ROOT: ${{ github.workspace }}/.tmp/cli-installed-e2e
+      OFFICE_CLI_LLM_BASE_URL: ${{ secrets.OFFICE_CLI_LLM_BASE_URL }}
+      OFFICE_CLI_LLM_API_KEY: ${{ secrets.OFFICE_CLI_LLM_API_KEY }}
+      OFFICE_CLI_LLM_MODEL: ${{ vars.OFFICE_CLI_LLM_MODEL || 'gpt-4.1' }}
+      OFFICE_CLI_LLM_REVIEW_MODEL: ${{ vars.OFFICE_CLI_LLM_REVIEW_MODEL || 'gpt-5.4-mini' }}
+      OFFICE_CLI_LLM_TIMEOUT_SEC: '180'
+      OFFICE_CLI_LICENSE_BASE_URL: ${{ vars.OFFICE_CLI_LICENSE_BASE_URL || 'https://platform.officecli.io' }}
+      OFFICE_CLI_LICENSE_ENABLED: 'true'
+      OFFICE_CLI_PUBLISH_BASE_URL: ${{ vars.CLI_EMBEDDED_PUBLISH_BASE_URL || 'https://platform.officecli.io' }}
+      OFFICE_CLI_PUBLISH_API_KEY: ${{ secrets.OFFICE_CLI_PUBLISH_API_KEY || secrets.OFFICE_CLI_LICENSE_API_KEY }}
+      OFFICE_CLI_PUBLISH_PROVIDER: http
+      OFFICE_CLI_PUBLISH_ENABLED: 'true'
+      OFFICE_CLI_DEFAULT_PUBLISH: 'true'
+      OFFICE_CLI_MODE: fast
+      PLATFORM_LICENSE_PROOF_SEED: ${{ secrets.PLATFORM_LICENSE_PROOF_SEED || '' }}
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            ca-certificates \
+            curl \
+            git \
+            golang-go \
+            jq \
+            python3 \
+            tar \
+            libreoffice-impress \
+            fonts-noto-cjk \
+            fonts-noto-color-emoji
+
+      - name: Checkout private source repo
+        uses: actions/checkout@v6.0.2
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ env.SOURCE_DEFAULT_BRANCH }}
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve run metadata
+        id: meta
+        run: |
+          run_date="$(date -u +%F)"
+          stamp="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+          round_name="${SUITE}-${stamp}"
+          report_dir="${GITHUB_WORKSPACE}/output/evals/${run_date}/${round_name}"
+          machine_id="${FINGERPRINT_SEED}-${run_date}"
+          mkdir -p "${report_dir}"
+          echo "run_date=${run_date}" >> "$GITHUB_OUTPUT"
+          echo "stamp=${stamp}" >> "$GITHUB_OUTPUT"
+          echo "round_name=${round_name}" >> "$GITHUB_OUTPUT"
+          echo "report_dir=${report_dir}" >> "$GITHUB_OUTPUT"
+          echo "machine_id=${machine_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Derive embedded license proof public key
+        id: proof_key
+        env:
+          PLATFORM_LICENSE_PROOF_SEED: ${{ secrets.PLATFORM_LICENSE_PROOF_SEED || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PLATFORM_LICENSE_PROOF_SEED}" ]; then
+            echo "value=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cat > "$GITHUB_WORKSPACE/derive_license_proof_public_key.go" <<'EOF'
+          package main
+
+          import (
+            "crypto/ed25519"
+            "encoding/base64"
+            "fmt"
+            "os"
+            "strings"
+          )
+
+          func main() {
+            seedValue := strings.TrimSpace(os.Getenv("PLATFORM_LICENSE_PROOF_SEED"))
+            if seedValue == "" {
+              panic("missing PLATFORM_LICENSE_PROOF_SEED")
+            }
+            seed, err := base64.RawURLEncoding.DecodeString(seedValue)
+            if err != nil {
+              panic(err)
+            }
+            privateKey := ed25519.NewKeyFromSeed(seed)
+            fmt.Println(base64.RawURLEncoding.EncodeToString(privateKey.Public().(ed25519.PublicKey)))
+          }
+          EOF
+          cli_license_proof_public_key="$(go run "$GITHUB_WORKSPACE/derive_license_proof_public_key.go")"
+          rm -f "$GITHUB_WORKSPACE/derive_license_proof_public_key.go"
+          echo "value=${cli_license_proof_public_key}" >> "$GITHUB_OUTPUT"
+
+      - name: Install officecli
+        id: install
+        working-directory: source
+        env:
+          CLI_EMBEDDED_PUBLISH_BASE_URL: ${{ vars.CLI_EMBEDDED_PUBLISH_BASE_URL || 'https://platform.officecli.io' }}
+          CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID: ${{ vars.CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID || 'officecli-cli' }}
+          CLI_EMBEDDED_PUBLISH_AUTH_KEY: ${{ secrets.CLI_EMBEDDED_PUBLISH_AUTH_KEY || '' }}
+          CLI_LICENSE_PROOF_PUBLIC_KEY: ${{ steps.proof_key.outputs.value }}
+        run: |
+          mkdir -p /usr/local/bin
+          if [ "${INSTALL_SOURCE}" = "current_build" ]; then
+            short_sha="$(git rev-parse --short HEAD)"
+            build_version="current-${short_sha}"
+            build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            go build \
+              -buildvcs=false \
+              -ldflags "-X github.com/officecli/officecli/internal/cli.Version=${build_version} -X github.com/officecli/officecli/internal/cli.Commit=${short_sha} -X github.com/officecli/officecli/internal/cli.BuildDate=${build_date} -X github.com/officecli/officecli/internal/license.EmbeddedLicenseProofPublicKey=${CLI_LICENSE_PROOF_PUBLIC_KEY} -X github.com/officecli/officecli/internal/providers/publish.EmbeddedPublishBaseURL=${CLI_EMBEDDED_PUBLISH_BASE_URL} -X github.com/officecli/officecli/internal/providers/publish.EmbeddedPublishAuthKeyID=${CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID} -X github.com/officecli/officecli/internal/providers/publish.EmbeddedPublishAuthKey=${CLI_EMBEDDED_PUBLISH_AUTH_KEY}" \
+              -o /usr/local/bin/officecli ./cmd/officecli
+            chmod +x /usr/local/bin/officecli
+          else
+            DIST_REPO="${DIST_REPO}" VERSION="${VERSION}" INSTALL_DIR="/usr/local/bin" bash ./scripts/install-officecli.sh
+          fi
+          installed_version="$(officecli --version | grep -Eo 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+          if [ -z "${installed_version}" ]; then
+            installed_version="$(officecli --version | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | cut -c1-120)"
+          fi
+          echo "installed_version=${installed_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Run installed CLI evaluation
+        id: eval
+        working-directory: source
+        env:
+          OFFICE_CLI_LICENSE_API_KEY: ${{ env.LICENSE_MODE == 'paid' && secrets.OFFICE_CLI_LICENSE_API_KEY || '' }}
+          OFFICE_CLI_MACHINE_ID: ${{ steps.meta.outputs.machine_id }}
+        run: |
+          set +e
+          report_dir="${{ steps.meta.outputs.report_dir }}"
+          python3 ./scripts/eval_ppt_quality.py \
+            --root . \
+            --bin "officecli" \
+            --suite "${SUITE}" \
+            --publish \
+            --date "${{ steps.meta.outputs.run_date }}" \
+            --round "${{ steps.meta.outputs.round_name }}" \
+            --version-label "${{ steps.install.outputs.installed_version }}"
+          exit_code=$?
+          echo "report_dir=${report_dir}" >> "$GITHUB_OUTPUT"
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload evaluation artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-installed-e2e
+          path: ${{ steps.meta.outputs.report_dir }}
+          if-no-files-found: warn
+
+      - name: Fail job when evaluation failed
+        if: steps.eval.outputs.exit_code != '0'
+        run: exit 1
