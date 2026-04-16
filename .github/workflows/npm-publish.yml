@@ -94,7 +94,10 @@ jobs:
           set -euo pipefail
           target_version="${{ steps.meta.outputs.package_version }}"
           for attempt in $(seq 1 30); do
-            current="$(npm view officecli version 2>/dev/null || true)"
+            current="$(
+              curl -fsSL "https://registry.npmjs.org/officecli/latest?ts=$(date +%s)" \
+                | node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync(0,'utf8')); process.stdout.write(String(data.version || ''));"
+            )"
             if [ "${current}" = "${target_version}" ]; then
               echo "npm package officecli@${target_version} is available"
               exit 0
