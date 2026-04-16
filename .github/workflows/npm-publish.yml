@@ -38,7 +38,7 @@ jobs:
         with:
           repository: ${{ env.SOURCE_REPO }}
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
-          ref: ${{ inputs.version }}
+          ref: ${{ startsWith(inputs.version, 'v') && inputs.version || format('v{0}', inputs.version) }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -50,13 +50,18 @@ jobs:
 
       - name: Normalize and validate release tag
         shell: bash
+        env:
+          SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
         run: |
           set -euo pipefail
           release_tag="${RELEASE_TAG}"
           if [[ "${release_tag}" != v* ]]; then
             release_tag="v${release_tag}"
           fi
-          git fetch --tags --force
+          if ! git rev-parse "${release_tag}^{commit}" >/dev/null 2>&1; then
+            git remote set-url origin "https://x-access-token:${SOURCE_REPO_TOKEN}@github.com/${SOURCE_REPO}.git"
+            git fetch --tags --force origin
+          fi
           git rev-parse "${release_tag}^{commit}" >/dev/null 2>&1
           echo "RELEASE_TAG=${release_tag}" >> "$GITHUB_ENV"
 
