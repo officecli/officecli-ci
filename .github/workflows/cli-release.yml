@@ -1,0 +1,260 @@
+name: CLI Release
+
+on:
+  schedule:
+    - cron: '5,20,35,50 * * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to release, e.g. v1.2.3'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: cli-release-${{ inputs.version || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  SOURCE_REPO: officecli/officecli
+  SOURCE_DEFAULT_BRANCH: main
+
+jobs:
+  preflight:
+    name: Resolve Optional Secret Gates
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.flags.outputs.ready }}
+      missing: ${{ steps.flags.outputs.missing }}
+    steps:
+      - name: Resolve flags
+        id: flags
+        env:
+          PUBLIC_DIST_REPO_TOKEN: ${{ secrets.PUBLIC_DIST_REPO_TOKEN || '' }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || '' }}
+          PLATFORM_LICENSE_PROOF_SEED: ${{ secrets.PLATFORM_LICENSE_PROOF_SEED || '' }}
+          CLI_EMBEDDED_PUBLISH_AUTH_KEY: ${{ secrets.CLI_EMBEDDED_PUBLISH_AUTH_KEY || '' }}
+        run: |
+          missing=()
+          if [ -z "${PUBLIC_DIST_REPO_TOKEN}" ]; then
+            missing+=("PUBLIC_DIST_REPO_TOKEN")
+          fi
+          if [ -z "${HOMEBREW_TAP_TOKEN}" ]; then
+            missing+=("HOMEBREW_TAP_TOKEN")
+          fi
+          if [ -z "${PLATFORM_LICENSE_PROOF_SEED}" ]; then
+            missing+=("PLATFORM_LICENSE_PROOF_SEED")
+          fi
+          if [ -z "${CLI_EMBEDDED_PUBLISH_AUTH_KEY}" ]; then
+            missing+=("CLI_EMBEDDED_PUBLISH_AUTH_KEY")
+          fi
+          ready=true
+          if [ "${#missing[@]}" -gt 0 ]; then
+            ready=false
+          fi
+          echo "ready=${ready}" >> "$GITHUB_OUTPUT"
+          echo "missing=$(IFS=', '; echo "${missing[*]}")" >> "$GITHUB_OUTPUT"
+
+      - name: Append preflight summary
+        run: |
+          if [ "${{ steps.flags.outputs.ready }}" = "true" ]; then
+            echo "CLI Release prerequisites are configured." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "CLI Release skipped because required configuration is missing: ${{ steps.flags.outputs.missing }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  release:
+    name: Build And Publish Public Assets
+    needs:
+      - preflight
+    if: ${{ needs.preflight.outputs.ready == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      PUBLIC_DIST_REPO: ${{ vars.PUBLIC_DIST_REPO || 'officecli/officecli-dist' }}
+      PUBLIC_DIST_DEFAULT_BRANCH: ${{ vars.PUBLIC_DIST_DEFAULT_BRANCH || 'main' }}
+      HOMEBREW_TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO || 'officecli/homebrew-officecli' }}
+      HOMEBREW_TAP_DEFAULT_BRANCH: ${{ vars.HOMEBREW_TAP_DEFAULT_BRANCH || 'main' }}
+      CLI_EMBEDDED_PUBLISH_BASE_URL: ${{ vars.CLI_EMBEDDED_PUBLISH_BASE_URL || 'https://platform.officecli.io' }}
+      CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID: ${{ vars.CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID || 'officecli-cli' }}
+    steps:
+      - name: Checkout public CI repo
+        uses: actions/checkout@v6.0.2
+
+      - name: Checkout private source repo
+        uses: actions/checkout@v6.0.2
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ env.SOURCE_DEFAULT_BRANCH }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve target release tag
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C source fetch --tags --force
+          release_tag=""
+          if [ -n "${{ inputs.version }}" ]; then
+            release_tag="${{ inputs.version }}"
+            if [[ "${release_tag}" != v* ]]; then
+              release_tag="v${release_tag}"
+            fi
+            git -C source rev-parse "${release_tag}^{commit}" >/dev/null 2>&1
+          else
+            state_file="${GITHUB_WORKSPACE}/.state/cli-release-tags.txt"
+            touch "${state_file}"
+            while IFS= read -r candidate; do
+              [ -z "${candidate}" ] && continue
+              if grep -Fxq "${candidate}" "${state_file}"; then
+                continue
+              fi
+              release_tag="${candidate}"
+              break
+            done < <(git -C source tag --list 'v*' --sort=-creatordate | rg -v -- '-prod-')
+          fi
+          should_run=false
+          if [ -n "${release_tag}" ]; then
+            should_run=true
+          fi
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "should_run=${should_run}" >> "$GITHUB_OUTPUT"
+
+      - name: Stop when no unprocessed release tag exists
+        if: steps.target.outputs.should_run != 'true'
+        run: echo "No unprocessed CLI release tag detected."
+
+      - name: Prepare release tooling outside source tree
+        if: steps.target.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release-tooling/scripts"
+          git -C source show "origin/${SOURCE_DEFAULT_BRANCH}:.goreleaser.dist.yml" > "$RUNNER_TEMP/release-tooling/.goreleaser.dist.yml"
+          git -C source show "origin/${SOURCE_DEFAULT_BRANCH}:scripts/install-officecli.sh" > "$RUNNER_TEMP/release-tooling/scripts/install-officecli.sh"
+          git -C source show "origin/${SOURCE_DEFAULT_BRANCH}:scripts/sync-public-dist-repo.sh" > "$RUNNER_TEMP/release-tooling/scripts/sync-public-dist-repo.sh"
+          git -C source show "origin/${SOURCE_DEFAULT_BRANCH}:scripts/sync-homebrew-tap.sh" > "$RUNNER_TEMP/release-tooling/scripts/sync-homebrew-tap.sh"
+          chmod +x "$RUNNER_TEMP/release-tooling/scripts/install-officecli.sh" \
+            "$RUNNER_TEMP/release-tooling/scripts/sync-public-dist-repo.sh" \
+            "$RUNNER_TEMP/release-tooling/scripts/sync-homebrew-tap.sh"
+
+      - name: Checkout target release tag
+        if: steps.target.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C source checkout --detach "${{ steps.target.outputs.release_tag }}"
+
+      - name: Setup Go
+        if: steps.target.outputs.should_run == 'true'
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: source/go.mod
+          cache-dependency-path: source/go.mod
+
+      - name: Run tests
+        if: steps.target.outputs.should_run == 'true'
+        working-directory: source
+        run: go test ./...
+
+      - name: Setup GoReleaser
+        if: steps.target.outputs.should_run == 'true'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          install-only: true
+
+      - name: Derive embedded license proof public key
+        if: steps.target.outputs.should_run == 'true'
+        working-directory: source
+        env:
+          PLATFORM_LICENSE_PROOF_SEED: ${{ secrets.PLATFORM_LICENSE_PROOF_SEED }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/derive_license_proof_public_key.go" <<'EOF'
+          package main
+
+          import (
+            "crypto/ed25519"
+            "encoding/base64"
+            "fmt"
+            "os"
+            "strings"
+          )
+
+          func main() {
+            seedValue := strings.TrimSpace(os.Getenv("PLATFORM_LICENSE_PROOF_SEED"))
+            if seedValue == "" {
+              panic("missing PLATFORM_LICENSE_PROOF_SEED")
+            }
+            seed, err := base64.RawURLEncoding.DecodeString(seedValue)
+            if err != nil {
+              panic(err)
+            }
+            privateKey := ed25519.NewKeyFromSeed(seed)
+            fmt.Println(base64.RawURLEncoding.EncodeToString(privateKey.Public().(ed25519.PublicKey)))
+          }
+          EOF
+          cli_license_proof_public_key="$(go run "$RUNNER_TEMP/derive_license_proof_public_key.go")"
+          echo "CLI_LICENSE_PROOF_PUBLIC_KEY=${cli_license_proof_public_key}" >> "$GITHUB_ENV"
+
+      - name: Delete existing public dist release for reruns
+        if: steps.target.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_DIST_REPO_TOKEN }}
+        run: |
+          gh release delete "${{ steps.target.outputs.release_tag }}" -R "${PUBLIC_DIST_REPO}" --yes --cleanup-tag || true
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${PUBLIC_DIST_REPO}.git" "refs/tags/${{ steps.target.outputs.release_tag }}" || true
+
+      - name: Publish binaries to public dist repository
+        if: steps.target.outputs.should_run == 'true'
+        working-directory: source
+        env:
+          GITHUB_TOKEN: ${{ secrets.PUBLIC_DIST_REPO_TOKEN }}
+          CLI_EMBEDDED_PUBLISH_AUTH_KEY: ${{ secrets.CLI_EMBEDDED_PUBLISH_AUTH_KEY }}
+          CLI_EMBEDDED_PUBLISH_BASE_URL: ${{ env.CLI_EMBEDDED_PUBLISH_BASE_URL }}
+          CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID: ${{ env.CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID }}
+        run: goreleaser release --clean --config "$RUNNER_TEMP/release-tooling/.goreleaser.dist.yml"
+
+      - name: Sync public dist repository docs and install script
+        if: steps.target.outputs.should_run == 'true'
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_DIST_REPO_TOKEN }}
+          DIST_REPO: ${{ env.PUBLIC_DIST_REPO }}
+          DIST_DEFAULT_BRANCH: ${{ env.PUBLIC_DIST_DEFAULT_BRANCH }}
+          HOMEBREW_TAP_REPO: ${{ env.HOMEBREW_TAP_REPO }}
+        run: bash "$RUNNER_TEMP/release-tooling/scripts/sync-public-dist-repo.sh"
+
+      - name: Sync Homebrew tap formula
+        if: steps.target.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_REPO: ${{ env.HOMEBREW_TAP_REPO }}
+          TAP_DEFAULT_BRANCH: ${{ env.HOMEBREW_TAP_DEFAULT_BRANCH }}
+          DIST_REPO: ${{ env.PUBLIC_DIST_REPO }}
+          VERSION: ${{ steps.target.outputs.release_tag }}
+        run: bash "$RUNNER_TEMP/release-tooling/scripts/sync-homebrew-tap.sh"
+
+      - name: Persist processed CLI release tag
+        if: success() && steps.target.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout -B main origin/main
+          touch .state/cli-release-tags.txt
+          if ! grep -Fxq "${{ steps.target.outputs.release_tag }}" .state/cli-release-tags.txt; then
+            printf '%s\n' "${{ steps.target.outputs.release_tag }}" >> .state/cli-release-tags.txt
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .state/cli-release-tags.txt
+          git diff --cached --quiet && exit 0
+          git commit -m "ci: track CLI release ${{ steps.target.outputs.release_tag }} [skip ci]"
+          git push origin HEAD:main

@@ -40,6 +40,10 @@ jobs:
       LATEST_TAG: latest
       PUBLIC_DIST_REPO: ${{ vars.PUBLIC_DIST_REPO || 'officecli/officecli-dist' }}
       PUBLIC_DIST_DEFAULT_BRANCH: ${{ vars.PUBLIC_DIST_DEFAULT_BRANCH || 'main' }}
+      PUBLIC_NPM_REPO: ${{ vars.PUBLIC_NPM_REPO || 'officecli/officecli-npm' }}
+      PUBLIC_NPM_DEFAULT_BRANCH: ${{ vars.PUBLIC_NPM_DEFAULT_BRANCH || 'main' }}
+      PUBLIC_SKILLS_REPO: ${{ vars.PUBLIC_SKILLS_REPO || 'officecli/officecli-skills' }}
+      PUBLIC_SKILLS_DEFAULT_BRANCH: ${{ vars.PUBLIC_SKILLS_DEFAULT_BRANCH || 'main' }}
       HOMEBREW_TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO || 'officecli/homebrew-officecli' }}
       CLI_EMBEDDED_PUBLISH_BASE_URL: ${{ vars.CLI_EMBEDDED_PUBLISH_BASE_URL || 'https://platform.officecli.io' }}
       CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID: ${{ vars.CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID || 'officecli-cli' }}
@@ -72,6 +76,9 @@ jobs:
           cli=false
           platform=false
           publish=false
+          npm_wrapper=false
+          sync_public_npm=false
+          sync_public_skills=false
           if [ "${manual}" = false ] && [ -n "${prev_sha}" ] && [ "${prev_sha}" = "${source_sha}" ]; then
             should_run=false
           fi
@@ -80,6 +87,9 @@ jobs:
               cli=true
               platform=true
               publish=true
+              npm_wrapper=true
+              sync_public_npm=true
+              sync_public_skills=true
             else
               changed="$(git -C source diff --name-only "${prev_sha}" "${source_sha}" || true)"
               if printf '%s\n' "${changed}" | rg -q '^(cmd/|engine/|internal/|pkg/|examples/|scripts/|go\.mod|Makefile|\.goreleaser\.dist\.yml|\.github/workflows/cli-)'; then
@@ -91,6 +101,15 @@ jobs:
               if printf '%s\n' "${changed}" | rg -q '^(cmd/|engine/|internal/|pkg/|go\.mod|Makefile|scripts/build-latest-release-assets\.sh|scripts/install-officecli\.sh|scripts/sync-public-dist-repo\.sh|\.github/workflows/cli-publish-latest\.yml)'; then
                 publish=true
               fi
+              if printf '%s\n' "${changed}" | rg -q '^(packages/npm/officecli/|\.github/workflows/npm-wrapper-ci\.yml)'; then
+                npm_wrapper=true
+              fi
+              if printf '%s\n' "${changed}" | rg -q '^(packages/npm/officecli/|templates/public-npm/|scripts/sync-public-npm-repo\.sh|\.github/workflows/sync-public-npm\.yml)'; then
+                sync_public_npm=true
+              fi
+              if printf '%s\n' "${changed}" | rg -q '^(skills/|plugins/|\.claude-plugin/|scripts/sync-public-skills-repo\.sh|templates/public-skills/|\.github/workflows/sync-public-skills\.yml)'; then
+                sync_public_skills=true
+              fi
             fi
           fi
           echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
@@ -100,6 +119,9 @@ jobs:
           echo "cli=${cli}" >> "$GITHUB_OUTPUT"
           echo "platform=${platform}" >> "$GITHUB_OUTPUT"
           echo "publish=${publish}" >> "$GITHUB_OUTPUT"
+          echo "npm_wrapper=${npm_wrapper}" >> "$GITHUB_OUTPUT"
+          echo "sync_public_npm=${sync_public_npm}" >> "$GITHUB_OUTPUT"
+          echo "sync_public_skills=${sync_public_skills}" >> "$GITHUB_OUTPUT"
 
       - name: Stop when private main SHA is unchanged
         if: steps.scope.outputs.should_run != 'true'
@@ -116,7 +138,7 @@ jobs:
             source/go.sum
 
       - name: Setup Node
-        if: steps.scope.outputs.platform == 'true'
+        if: steps.scope.outputs.platform == 'true' || steps.scope.outputs.npm_wrapper == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -163,6 +185,67 @@ jobs:
             npm test -- --run
             npm run build
           done
+
+      - name: Run npm wrapper smoke checks
+        if: steps.scope.outputs.npm_wrapper == 'true'
+        working-directory: source/packages/npm/officecli
+        run: |
+          npm ci
+          npm pack
+          npm install -g ./officecli-*.tgz
+          officecli --version
+
+      - name: Check public npm sync prerequisites
+        id: sync_public_npm_ready
+        if: steps.scope.outputs.sync_public_npm == 'true'
+        shell: bash
+        env:
+          PUBLIC_NPM_REPO_TOKEN: ${{ secrets.PUBLIC_NPM_REPO_TOKEN || '' }}
+          PUBLIC_NPM_REPO: ${{ env.PUBLIC_NPM_REPO }}
+        run: |
+          ready=true
+          for value in "$PUBLIC_NPM_REPO_TOKEN" "$PUBLIC_NPM_REPO"; do
+            if [ -z "$value" ]; then
+              ready=false
+            fi
+          done
+          echo "ready=${ready}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync public npm repository
+        if: steps.scope.outputs.sync_public_npm == 'true' && steps.sync_public_npm_ready.outputs.ready == 'true'
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_NPM_REPO_TOKEN }}
+          PUBLIC_NPM_REPO: ${{ env.PUBLIC_NPM_REPO }}
+          PUBLIC_NPM_DEFAULT_BRANCH: ${{ env.PUBLIC_NPM_DEFAULT_BRANCH }}
+        run: bash ./scripts/sync-public-npm-repo.sh
+
+      - name: Check public skills sync prerequisites
+        id: sync_public_skills_ready
+        if: steps.scope.outputs.sync_public_skills == 'true'
+        shell: bash
+        env:
+          PUBLIC_SKILLS_REPO_TOKEN: ${{ secrets.PUBLIC_SKILLS_REPO_TOKEN || '' }}
+          PUBLIC_SKILLS_REPO: ${{ env.PUBLIC_SKILLS_REPO }}
+        run: |
+          ready=true
+          for value in "$PUBLIC_SKILLS_REPO_TOKEN" "$PUBLIC_SKILLS_REPO"; do
+            if [ -z "$value" ]; then
+              ready=false
+            fi
+          done
+          echo "ready=${ready}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync public skills repository
+        if: steps.scope.outputs.sync_public_skills == 'true' && steps.sync_public_skills_ready.outputs.ready == 'true'
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_SKILLS_REPO_TOKEN }}
+          PUBLIC_SKILLS_REPO: ${{ env.PUBLIC_SKILLS_REPO }}
+          PUBLIC_SKILLS_DEFAULT_BRANCH: ${{ env.PUBLIC_SKILLS_DEFAULT_BRANCH }}
+          DIST_REPO: ${{ env.PUBLIC_DIST_REPO }}
+          HOMEBREW_TAP_REPO: ${{ env.HOMEBREW_TAP_REPO }}
+        run: bash ./scripts/sync-public-skills-repo.sh
 
       - name: Check publish prerequisites
         id: publish_ready

@@ -10,6 +10,7 @@ This repository stores workflow definitions only. It does not mirror private sou
 - Source access uses the `SOURCE_REPO_TOKEN` Actions secret.
 - No production or release secret is copied here automatically.
 - Release and inspection workflows stay gated until the required secrets are added manually.
+- `Private Main CI` also covers the old private-repo wrapper smoke test and public npm/skills sync flows.
 
 ## Required secrets
 
@@ -18,6 +19,9 @@ This repository stores workflow definitions only. It does not mirror private sou
 Optional secrets for gated workflows:
 
 - `PUBLIC_DIST_REPO_TOKEN`
+- `PUBLIC_NPM_REPO_TOKEN`
+- `PUBLIC_SKILLS_REPO_TOKEN`
+- `HOMEBREW_TAP_TOKEN`
 - `PLATFORM_LICENSE_PROOF_SEED`
 - `CLI_EMBEDDED_PUBLISH_AUTH_KEY`
 - `OFFICE_CLI_LLM_BASE_URL`
@@ -32,6 +36,13 @@ Optional secrets for gated workflows:
 - `INSPECTION_API_KEY`
 - `INSPECTION_BLOCKED_API_KEY`
 - `INSPECTION_USER_ID`
+- `PLATFORM_APP_SESSION_SECRET`
+- `PLATFORM_PREVIEW_OBJECT_ACCESS_KEY`
+- `PLATFORM_PREVIEW_OBJECT_SECRET_KEY`
+- `PLATFORM_OFFICESDK_JWT_SECRET`
+- `PLATFORM_SSH_PRIVATE_KEY`
+- `SSH_PRIVATE_KEY`
+- `PLATFORM_SSH_KNOWN_HOSTS`
 
 ## Optional variables
 
@@ -42,6 +53,10 @@ Optional secrets for gated workflows:
 - `CLI_INSTALLED_E2E_DEFAULT_SUITE`
 - `CLI_EMBEDDED_PUBLISH_BASE_URL`
 - `CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID`
+- `PUBLIC_NPM_REPO`
+- `PUBLIC_NPM_DEFAULT_BRANCH`
+- `PUBLIC_SKILLS_REPO`
+- `PUBLIC_SKILLS_DEFAULT_BRANCH`
 - `HOMEBREW_TAP_REPO`
 - `HOMEBREW_TAP_DEFAULT_BRANCH`
 - `INSPECTION_SITE_BASE_URL`
@@ -49,3 +64,25 @@ Optional secrets for gated workflows:
 - `OFFICE_CLI_LICENSE_BASE_URL`
 - `OFFICE_CLI_LLM_MODEL`
 - `OFFICE_CLI_LLM_REVIEW_MODEL`
+- `PLATFORM_SERVER_HOST`
+- `PLATFORM_SERVER_USER`
+- `PLATFORM_SSH_PORT`
+- `PLATFORM_REMOTE_WORKDIR`
+- `PLATFORM_REMOTE_SITE_DIR`
+- `PLATFORM_REMOTE_APP_DIR`
+- `PLATFORM_REMOTE_ADMIN_DIR`
+- `PLATFORM_KUBE_NAMESPACE`
+- `PLATFORM_DEPLOYMENT_NAME`
+- `PLATFORM_CONTAINER_NAME`
+- `PLATFORM_IMAGE_REPO`
+- `PLATFORM_SECRET_NAME`
+- `PLATFORM_APP_ENV`
+- `PLATFORM_SITE_BASE_URL`
+- `PLATFORM_PLATFORM_BASE_URL`
+- `PLATFORM_APP_SESSION_TTL`
+- `PLATFORM_APP_SESSION_COOKIE_DOMAIN`
+- `PLATFORM_PREVIEW_OBJECT_ENDPOINT`
+- `PLATFORM_PREVIEW_OBJECT_BUCKET`
+- `PLATFORM_PREVIEW_OBJECT_USE_SSL`
+- `PLATFORM_OFFICESDK_HOST`
+- `PLATFORM_OFFICESDK_ENDPOINT`

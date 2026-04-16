@@ -1,0 +1,78 @@
+name: NPM Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to publish, for example v0.2.6'
+        required: true
+        type: string
+      dist_repo:
+        description: 'Public dist repository'
+        required: false
+        default: 'officecli/officecli-dist'
+        type: string
+
+concurrency:
+  group: npm-publish-${{ inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  SOURCE_REPO: officecli/officecli
+  SOURCE_DEFAULT_BRANCH: main
+
+jobs:
+  publish:
+    name: Publish Wrapper To NPM
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.version }}
+      DIST_REPO: ${{ inputs.dist_repo || vars.PUBLIC_DIST_REPO || 'officecli/officecli-dist' }}
+    steps:
+      - name: Checkout private source repo
+        uses: actions/checkout@v6.0.2
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ inputs.version }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Normalize and validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_tag="${RELEASE_TAG}"
+          if [[ "${release_tag}" != v* ]]; then
+            release_tag="v${release_tag}"
+          fi
+          git fetch --tags --force
+          git rev-parse "${release_tag}^{commit}" >/dev/null 2>&1
+          echo "RELEASE_TAG=${release_tag}" >> "$GITHUB_ENV"
+
+      - name: Ensure public dist release exists
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_DIST_REPO_TOKEN || github.token }}
+        run: gh release view "${RELEASE_TAG}" -R "${DIST_REPO}" >/dev/null
+
+      - name: Check wrapper version
+        working-directory: packages/npm/officecli
+        run: npm run check:release-version
+
+      - name: Pack wrapper
+        working-directory: packages/npm/officecli
+        run: npm pack
+
+      - name: Publish wrapper
+        working-directory: packages/npm/officecli
+        run: npm publish --access public
