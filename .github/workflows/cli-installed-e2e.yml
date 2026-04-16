@@ -39,6 +39,10 @@ concurrency:
   group: cli-installed-e2e-${{ github.event.schedule || inputs.install_source || inputs.license_mode || inputs.version || github.run_id }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 env:
   SOURCE_REPO: officecli/officecli
   SOURCE_DEFAULT_BRANCH: main
