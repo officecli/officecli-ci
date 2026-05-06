@@ -38,6 +38,7 @@ jobs:
           PLATFORM_PREVIEW_OBJECT_ACCESS_KEY: ${{ secrets.PLATFORM_PREVIEW_OBJECT_ACCESS_KEY || '' }}
           PLATFORM_PREVIEW_OBJECT_SECRET_KEY: ${{ secrets.PLATFORM_PREVIEW_OBJECT_SECRET_KEY || '' }}
           PLATFORM_OFFICESDK_JWT_SECRET: ${{ secrets.PLATFORM_OFFICESDK_JWT_SECRET || '' }}
+          PLATFORM_HOSTED_LLM_API_KEY: ${{ secrets.PLATFORM_HOSTED_LLM_API_KEY || secrets.OFFICE_CLI_LLM_API_KEY || '' }}
           PLATFORM_SSH_PRIVATE_KEY: ${{ secrets.PLATFORM_SSH_PRIVATE_KEY || secrets.SSH_PRIVATE_KEY || '' }}
           PLATFORM_PREVIEW_OBJECT_ENDPOINT: ${{ secrets.PLATFORM_PREVIEW_OBJECT_ENDPOINT || vars.PLATFORM_PREVIEW_OBJECT_ENDPOINT || '' }}
           PLATFORM_OFFICESDK_HOST: ${{ secrets.PLATFORM_OFFICESDK_HOST || vars.PLATFORM_OFFICESDK_HOST || '' }}
@@ -57,6 +58,9 @@ jobs:
           fi
           if [ -z "${PLATFORM_OFFICESDK_JWT_SECRET}" ]; then
             missing+=("PLATFORM_OFFICESDK_JWT_SECRET")
+          fi
+          if [ -z "${PLATFORM_HOSTED_LLM_API_KEY}" ]; then
+            missing+=("PLATFORM_HOSTED_LLM_API_KEY")
           fi
           if [ -z "${PLATFORM_SSH_PRIVATE_KEY}" ]; then
             missing+=("PLATFORM_SSH_PRIVATE_KEY or SSH_PRIVATE_KEY")
@@ -111,6 +115,11 @@ jobs:
       PREVIEW_OBJECT_USE_SSL: ${{ vars.PLATFORM_PREVIEW_OBJECT_USE_SSL || 'false' }}
       OFFICESDK_HOST: ${{ secrets.PLATFORM_OFFICESDK_HOST || vars.PLATFORM_OFFICESDK_HOST }}
       OFFICESDK_ENDPOINT: ${{ vars.PLATFORM_OFFICESDK_ENDPOINT || 'https://officecli.io/sdk/turbo-ai' }}
+      HOSTED_LLM_BASE_URL: ${{ secrets.PLATFORM_HOSTED_LLM_BASE_URL || secrets.OFFICE_CLI_LLM_BASE_URL || vars.PLATFORM_HOSTED_LLM_BASE_URL || 'https://api.openai.com/v1' }}
+      HOSTED_LLM_API_KEY: ${{ secrets.PLATFORM_HOSTED_LLM_API_KEY || secrets.OFFICE_CLI_LLM_API_KEY }}
+      HOSTED_LLM_TEXT_MODEL: ${{ vars.PLATFORM_HOSTED_LLM_TEXT_MODEL || vars.OFFICE_CLI_LLM_MODEL || 'gpt-4.1' }}
+      HOSTED_LLM_IMAGE_MODEL: ${{ vars.PLATFORM_HOSTED_LLM_IMAGE_MODEL || 'gpt-image-1' }}
+      HOSTED_LLM_PROVIDER: ${{ vars.PLATFORM_HOSTED_LLM_PROVIDER || 'openai' }}
       APP_SESSION_SECRET: ${{ secrets.PLATFORM_APP_SESSION_SECRET }}
       LICENSE_PROOF_SEED: ${{ secrets.PLATFORM_LICENSE_PROOF_SEED }}
       PREVIEW_OBJECT_ACCESS_KEY: ${{ secrets.PLATFORM_PREVIEW_OBJECT_ACCESS_KEY }}
@@ -257,6 +266,11 @@ jobs:
             OFFICESDK_HOST
             OFFICESDK_ENDPOINT
             OFFICESDK_JWT_SECRET
+            HOSTED_LLM_BASE_URL
+            HOSTED_LLM_API_KEY
+            HOSTED_LLM_TEXT_MODEL
+            HOSTED_LLM_IMAGE_MODEL
+            HOSTED_LLM_PROVIDER
           )
           for key in "${required_keys[@]}"; do
             if [ -z "${!key:-}" ]; then
@@ -281,6 +295,11 @@ jobs:
           printf 'OFFICESDK_HOST=%s\n' "${OFFICESDK_HOST}" >> "${env_file}"
           printf 'OFFICESDK_ENDPOINT=%s\n' "${OFFICESDK_ENDPOINT}" >> "${env_file}"
           printf 'OFFICESDK_JWT_SECRET=%s\n' "${OFFICESDK_JWT_SECRET}" >> "${env_file}"
+          printf 'HOSTED_LLM_BASE_URL=%s\n' "${HOSTED_LLM_BASE_URL}" >> "${env_file}"
+          printf 'HOSTED_LLM_API_KEY=%s\n' "${HOSTED_LLM_API_KEY}" >> "${env_file}"
+          printf 'HOSTED_LLM_TEXT_MODEL=%s\n' "${HOSTED_LLM_TEXT_MODEL}" >> "${env_file}"
+          printf 'HOSTED_LLM_IMAGE_MODEL=%s\n' "${HOSTED_LLM_IMAGE_MODEL}" >> "${env_file}"
+          printf 'HOSTED_LLM_PROVIDER=%s\n' "${HOSTED_LLM_PROVIDER}" >> "${env_file}"
           echo "PLATFORM_ENV_FILE=${env_file}" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=${{ steps.target.outputs.release_tag }}" >> "$GITHUB_ENV"
 
