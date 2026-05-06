@@ -120,6 +120,7 @@ jobs:
       HOSTED_LLM_TEXT_MODEL: ${{ vars.PLATFORM_HOSTED_LLM_TEXT_MODEL || vars.OFFICE_CLI_LLM_MODEL || 'gpt-4.1' }}
       HOSTED_LLM_IMAGE_MODEL: ${{ vars.PLATFORM_HOSTED_LLM_IMAGE_MODEL || 'gpt-image-2' }}
       HOSTED_LLM_PROVIDER: ${{ vars.PLATFORM_HOSTED_LLM_PROVIDER || 'openai' }}
+      HOSTED_LLM_TIMEOUT_SEC: ${{ vars.PLATFORM_HOSTED_LLM_TIMEOUT_SEC || '1200' }}
       APP_SESSION_SECRET: ${{ secrets.PLATFORM_APP_SESSION_SECRET }}
       LICENSE_PROOF_SEED: ${{ secrets.PLATFORM_LICENSE_PROOF_SEED }}
       PREVIEW_OBJECT_ACCESS_KEY: ${{ secrets.PLATFORM_PREVIEW_OBJECT_ACCESS_KEY }}
@@ -271,6 +272,7 @@ jobs:
             HOSTED_LLM_TEXT_MODEL
             HOSTED_LLM_IMAGE_MODEL
             HOSTED_LLM_PROVIDER
+            HOSTED_LLM_TIMEOUT_SEC
           )
           for key in "${required_keys[@]}"; do
             if [ -z "${!key:-}" ]; then
@@ -300,6 +302,7 @@ jobs:
           printf 'HOSTED_LLM_TEXT_MODEL=%s\n' "${HOSTED_LLM_TEXT_MODEL}" >> "${env_file}"
           printf 'HOSTED_LLM_IMAGE_MODEL=%s\n' "${HOSTED_LLM_IMAGE_MODEL}" >> "${env_file}"
           printf 'HOSTED_LLM_PROVIDER=%s\n' "${HOSTED_LLM_PROVIDER}" >> "${env_file}"
+          printf 'HOSTED_LLM_TIMEOUT_SEC=%s\n' "${HOSTED_LLM_TIMEOUT_SEC}" >> "${env_file}"
           echo "PLATFORM_ENV_FILE=${env_file}" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=${{ steps.target.outputs.release_tag }}" >> "$GITHUB_ENV"
 
