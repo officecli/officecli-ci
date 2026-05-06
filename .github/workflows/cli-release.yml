@@ -234,6 +234,7 @@ jobs:
         working-directory: source
         env:
           GITHUB_TOKEN: ${{ secrets.PUBLIC_DIST_REPO_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.target.outputs.release_tag }}
           CLI_EMBEDDED_PUBLISH_AUTH_KEY: ${{ secrets.CLI_EMBEDDED_PUBLISH_AUTH_KEY }}
           CLI_EMBEDDED_PUBLISH_BASE_URL: ${{ env.CLI_EMBEDDED_PUBLISH_BASE_URL }}
           CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID: ${{ env.CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID }}
