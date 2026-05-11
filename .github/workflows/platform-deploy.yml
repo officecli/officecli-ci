@@ -125,8 +125,9 @@ jobs:
       HOSTED_LLM_IMAGE_MODEL: ${{ vars.PLATFORM_HOSTED_LLM_IMAGE_MODEL || 'gpt-image-2' }}
       HOSTED_LLM_PROVIDER: ${{ vars.PLATFORM_HOSTED_LLM_PROVIDER || 'openai' }}
       HOSTED_LLM_TIMEOUT_SEC: ${{ vars.PLATFORM_HOSTED_LLM_TIMEOUT_SEC || '1200' }}
-      AIGATEWAY_ADMIN_BASE_URL: ${{ vars.AIGATEWAY_ADMIN_BASE_URL || 'http://aigateway.claudeoffice.com' }}
+      AIGATEWAY_ADMIN_BASE_URL: ${{ vars.AIGATEWAY_ADMIN_BASE_URL || 'https://aigateway.claudeoffice.com' }}
       AIGATEWAY_ADMIN_API_KEY: ${{ secrets.AIGATEWAY_ADMIN_API_KEY }}
+      AIGATEWAY_API_KEY_GROUP: ${{ vars.AIGATEWAY_API_KEY_GROUP || '' }}
       AIGATEWAY_CREATE_API_KEY_PATH: ${{ vars.AIGATEWAY_CREATE_API_KEY_PATH || '/api/open/api-keys' }}
       APP_SESSION_SECRET: ${{ secrets.PLATFORM_APP_SESSION_SECRET }}
       LICENSE_PROOF_SEED: ${{ secrets.PLATFORM_LICENSE_PROOF_SEED }}
@@ -315,6 +316,7 @@ jobs:
           printf 'HOSTED_LLM_TIMEOUT_SEC=%s\n' "${HOSTED_LLM_TIMEOUT_SEC}" >> "${env_file}"
           printf 'AIGATEWAY_ADMIN_BASE_URL=%s\n' "${AIGATEWAY_ADMIN_BASE_URL}" >> "${env_file}"
           printf 'AIGATEWAY_ADMIN_API_KEY=%s\n' "${AIGATEWAY_ADMIN_API_KEY}" >> "${env_file}"
+          printf 'AIGATEWAY_API_KEY_GROUP=%s\n' "${AIGATEWAY_API_KEY_GROUP}" >> "${env_file}"
           printf 'AIGATEWAY_CREATE_API_KEY_PATH=%s\n' "${AIGATEWAY_CREATE_API_KEY_PATH}" >> "${env_file}"
           echo "PLATFORM_ENV_FILE=${env_file}" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=${{ steps.target.outputs.release_tag }}" >> "$GITHUB_ENV"
