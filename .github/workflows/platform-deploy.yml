@@ -125,6 +125,7 @@ jobs:
       HOSTED_LLM_IMAGE_MODEL: ${{ vars.PLATFORM_HOSTED_LLM_IMAGE_MODEL || 'gpt-image-2' }}
       HOSTED_LLM_PROVIDER: ${{ vars.PLATFORM_HOSTED_LLM_PROVIDER || 'openai' }}
       HOSTED_LLM_TIMEOUT_SEC: ${{ vars.PLATFORM_HOSTED_LLM_TIMEOUT_SEC || '1200' }}
+      DEFAULT_FREE_LIMIT: ${{ vars.PLATFORM_DEFAULT_FREE_LIMIT || '5' }}
       AIGATEWAY_ADMIN_BASE_URL: ${{ vars.AIGATEWAY_ADMIN_BASE_URL || 'https://aigateway.claudeoffice.com' }}
       AIGATEWAY_ADMIN_API_KEY: ${{ secrets.AIGATEWAY_ADMIN_API_KEY }}
       AIGATEWAY_API_KEY_GROUP: ${{ vars.AIGATEWAY_API_KEY_GROUP || '' }}
@@ -281,6 +282,7 @@ jobs:
             HOSTED_LLM_IMAGE_MODEL
             HOSTED_LLM_PROVIDER
             HOSTED_LLM_TIMEOUT_SEC
+            DEFAULT_FREE_LIMIT
             AIGATEWAY_ADMIN_BASE_URL
             AIGATEWAY_ADMIN_API_KEY
             AIGATEWAY_CREATE_API_KEY_PATH
@@ -314,6 +316,7 @@ jobs:
           printf 'HOSTED_LLM_IMAGE_MODEL=%s\n' "${HOSTED_LLM_IMAGE_MODEL}" >> "${env_file}"
           printf 'HOSTED_LLM_PROVIDER=%s\n' "${HOSTED_LLM_PROVIDER}" >> "${env_file}"
           printf 'HOSTED_LLM_TIMEOUT_SEC=%s\n' "${HOSTED_LLM_TIMEOUT_SEC}" >> "${env_file}"
+          printf 'DEFAULT_FREE_LIMIT=%s\n' "${DEFAULT_FREE_LIMIT}" >> "${env_file}"
           printf 'AIGATEWAY_ADMIN_BASE_URL=%s\n' "${AIGATEWAY_ADMIN_BASE_URL}" >> "${env_file}"
           printf 'AIGATEWAY_ADMIN_API_KEY=%s\n' "${AIGATEWAY_ADMIN_API_KEY}" >> "${env_file}"
           printf 'AIGATEWAY_API_KEY_GROUP=%s\n' "${AIGATEWAY_API_KEY_GROUP}" >> "${env_file}"
