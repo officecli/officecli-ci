@@ -42,7 +42,7 @@ defaults:
     shell: bash
 
 env:
-  SOURCE_REPO: officecli/officecli
+  SOURCE_REPO: ${{ vars.SOURCE_REPO || 'officecli/officecli-internal' }}
   SOURCE_DEFAULT_BRANCH: main
 
 jobs:
@@ -225,7 +225,7 @@ jobs:
             build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             go build \
               -buildvcs=false \
-              -ldflags "-X github.com/officecli/officecli/internal/cli.Version=${build_version} -X github.com/officecli/officecli/internal/cli.Commit=${short_sha} -X github.com/officecli/officecli/internal/cli.BuildDate=${build_date} -X github.com/officecli/officecli/internal/license.EmbeddedLicenseProofPublicKey=${CLI_LICENSE_PROOF_PUBLIC_KEY} -X github.com/officecli/officecli/internal/providers/publish.EmbeddedPublishBaseURL=${CLI_EMBEDDED_PUBLISH_BASE_URL} -X github.com/officecli/officecli/internal/providers/publish.EmbeddedPublishAuthKeyID=${CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID} -X github.com/officecli/officecli/internal/providers/publish.EmbeddedPublishAuthKey=${CLI_EMBEDDED_PUBLISH_AUTH_KEY}" \
+              -ldflags "-X github.com/officecli/officecli-internal/internal/cli.Version=${build_version} -X github.com/officecli/officecli-internal/internal/cli.Commit=${short_sha} -X github.com/officecli/officecli-internal/internal/cli.BuildDate=${build_date} -X github.com/officecli/officecli-internal/internal/license.EmbeddedLicenseProofPublicKey=${CLI_LICENSE_PROOF_PUBLIC_KEY} -X github.com/officecli/officecli-internal/internal/providers/publish.EmbeddedPublishBaseURL=${CLI_EMBEDDED_PUBLISH_BASE_URL} -X github.com/officecli/officecli-internal/internal/providers/publish.EmbeddedPublishAuthKeyID=${CLI_EMBEDDED_PUBLISH_AUTH_KEY_ID} -X github.com/officecli/officecli-internal/internal/providers/publish.EmbeddedPublishAuthKey=${CLI_EMBEDDED_PUBLISH_AUTH_KEY}" \
               -o /usr/local/bin/officecli ./cmd/officecli
             chmod +x /usr/local/bin/officecli
           else

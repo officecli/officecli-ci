@@ -22,7 +22,7 @@ permissions:
   id-token: write
 
 env:
-  SOURCE_REPO: officecli/officecli
+  SOURCE_REPO: ${{ vars.SOURCE_REPO || 'officecli/officecli-internal' }}
   SOURCE_DEFAULT_BRANCH: main
   PUBLIC_NPM_REPO: officecli/officecli-npm
   PUBLIC_NPM_DEFAULT_BRANCH: main

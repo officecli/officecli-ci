@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SOURCE_REPO: officecli/officecli
+  SOURCE_REPO: ${{ vars.SOURCE_REPO || 'officecli/officecli-internal' }}
   SOURCE_DEFAULT_BRANCH: main
 
 jobs:

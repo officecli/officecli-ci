@@ -30,7 +30,7 @@ permissions:
   contents: write
 
 env:
-  SOURCE_REPO: officecli/officecli
+  SOURCE_REPO: ${{ vars.SOURCE_REPO || 'officecli/officecli-internal' }}
   SOURCE_DEFAULT_BRANCH: main
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
       PUBLIC_DIST_DEFAULT_BRANCH: ${{ vars.PUBLIC_DIST_DEFAULT_BRANCH || 'main' }}
       PUBLIC_NPM_REPO: ${{ vars.PUBLIC_NPM_REPO || 'officecli/officecli-npm' }}
       PUBLIC_NPM_DEFAULT_BRANCH: ${{ vars.PUBLIC_NPM_DEFAULT_BRANCH || 'main' }}
-      PUBLIC_SKILLS_REPO: ${{ vars.PUBLIC_SKILLS_REPO || 'officecli/officecli-skills' }}
+      PUBLIC_SKILLS_REPO: ${{ vars.PUBLIC_SKILLS_REPO || 'officecli/officecli' }}
       PUBLIC_SKILLS_DEFAULT_BRANCH: ${{ vars.PUBLIC_SKILLS_DEFAULT_BRANCH || 'main' }}
       HOMEBREW_TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO || 'officecli/homebrew-officecli' }}
       CLI_EMBEDDED_PUBLISH_BASE_URL: ${{ vars.CLI_EMBEDDED_PUBLISH_BASE_URL || 'https://platform.officecli.io' }}
