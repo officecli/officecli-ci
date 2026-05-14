@@ -5,6 +5,12 @@ on:
     - cron: '17,47 * * * *'
     - cron: '23 3 * * *'
   workflow_dispatch:
+    inputs:
+      run_isolated_write:
+        description: 'Also run isolated write checks with dedicated inspection keys'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: production-inspection-${{ github.event.schedule || github.run_id }}
@@ -101,7 +107,7 @@ jobs:
       contents: read
     needs:
       - preflight
-    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.event.schedule == '23 3 * * *')) && needs.preflight.outputs.has_isolated == 'true' }}
+    if: ${{ ((github.event_name == 'workflow_dispatch' && inputs.run_isolated_write == true) || (github.event_name == 'schedule' && github.event.schedule == '23 3 * * *')) && needs.preflight.outputs.has_isolated == 'true' }}
     env:
       REPORT_DIR: ${{ github.workspace }}/.tmp/production-inspection/isolated-write
       PLATFORM_BASE_URL: ${{ vars.INSPECTION_PLATFORM_BASE_URL || 'https://platform.officecli.io' }}
