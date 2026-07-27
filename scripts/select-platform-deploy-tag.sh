@@ -19,9 +19,17 @@ while IFS= read -r candidate; do
   fi
 done
 
+manual_tag="${2:-}"
 release_tag=""
 should_run=false
-if [[ -n "${latest_tag}" ]] && ! grep -q -- "${latest_tag}" "${state_file}"; then
+
+if [[ -n "${manual_tag}" ]]; then
+  release_tag="${manual_tag}"
+  if [[ "${release_tag}" != v* ]]; then
+    release_tag="v${release_tag}"
+  fi
+  should_run=true
+elif [[ -n "${latest_tag}" ]] && ! grep -Fxq -- "${latest_tag}" "${state_file}"; then
   release_tag="${latest_tag}"
   should_run=true
 fi

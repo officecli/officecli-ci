@@ -41,3 +41,16 @@ assert_selection \
   $'release_tag=\nshould_run=false' \
   '' \
   ''
+
+assert_selection \
+  "manual-historical-tag-takes-priority" \
+  $'release_tag=v0.2.0-prod-20260403-1\nshould_run=true' \
+  $'v0.2.0-prod-20260403-1\n' \
+  $'v0.2.0-prod-20260727-1\n' \
+  '0.2.0-prod-20260403-1'
+
+assert_selection \
+  "processed-state-matches-exact-lines" \
+  $'release_tag=v0.2.0-prod-20260727-1\nshould_run=true' \
+  $'v0.2.0-prod-20260727-10\n' \
+  $'v0.2.0-prod-20260727-1\n'
