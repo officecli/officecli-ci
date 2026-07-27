@@ -154,35 +154,23 @@ jobs:
         shell: bash
         env:
           SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
+          MANUAL_RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           git -C source remote set-url origin "https://x-access-token:${SOURCE_REPO_TOKEN}@github.com/${SOURCE_REPO}.git"
           git -C source fetch --tags --force
-          release_tag=""
-          if [ -n "${{ inputs.release_tag }}" ]; then
-            release_tag="${{ inputs.release_tag }}"
-            if [[ "${release_tag}" != v* ]]; then
-              release_tag="v${release_tag}"
-            fi
-            git -C source rev-parse "${release_tag}^{commit}" >/dev/null 2>&1
-          else
-            state_file="${GITHUB_WORKSPACE}/.state/platform-deploy-tags.txt"
-            touch "${state_file}"
-            while IFS= read -r candidate; do
-              [ -z "${candidate}" ] && continue
-              if grep -Fxq "${candidate}" "${state_file}"; then
-                continue
-              fi
-              release_tag="${candidate}"
-              break
-            done < <(git -C source tag --list 'v*-prod-*' --sort=-creatordate)
-          fi
-          should_run=false
+          state_file="${GITHUB_WORKSPACE}/.state/platform-deploy-tags.txt"
+          mkdir -p "$(dirname "${state_file}")"
+          touch "${state_file}"
+          selection="$(
+            git -C source tag --list 'v*-prod-*' --sort=-creatordate |
+              ./scripts/select-platform-deploy-tag.sh "${state_file}" "${MANUAL_RELEASE_TAG}"
+          )"
+          printf '%s\n' "${selection}" >> "$GITHUB_OUTPUT"
+          release_tag="$(printf '%s\n' "${selection}" | sed -n 's/^release_tag=//p')"
           if [ -n "${release_tag}" ]; then
-            should_run=true
+            git -C source rev-parse "${release_tag}^{commit}" >/dev/null 2>&1
           fi
-          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
-          echo "should_run=${should_run}" >> "$GITHUB_OUTPUT"
 
       - name: Stop when no unprocessed production deploy tag exists
         if: steps.target.outputs.should_run != 'true'

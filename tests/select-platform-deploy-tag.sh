@@ -54,3 +54,14 @@ assert_selection \
   $'release_tag=v0.2.0-prod-20260727-1\nshould_run=true' \
   $'v0.2.0-prod-20260727-10\n' \
   $'v0.2.0-prod-20260727-1\n'
+
+workflow_file="${repo_root}/.github/workflows/platform-deploy.yml"
+if ! grep -Fq './scripts/select-platform-deploy-tag.sh' "${workflow_file}"; then
+  echo 'FAIL workflow-does-not-call-selector' >&2
+  exit 1
+fi
+if grep -Fq 'while IFS= read -r candidate' "${workflow_file}"; then
+  echo 'FAIL workflow-still-backfills-historical-tags' >&2
+  exit 1
+fi
+printf 'PASS workflow-uses-tested-selector\n'
