@@ -10,6 +10,11 @@ on:
         required: false
         default: ''
         type: string
+      allow_bootstrap:
+        description: 'Allow first-time bootstrap. Needed only when the Deployment does not exist yet in the target namespace (fresh cluster/namespace).'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -109,6 +114,10 @@ jobs:
       CONTAINER_NAME: ${{ secrets.PLATFORM_CONTAINER_NAME || vars.PLATFORM_CONTAINER_NAME || 'platform' }}
       IMAGE_REPO: ${{ secrets.PLATFORM_IMAGE_REPO || vars.PLATFORM_IMAGE_REPO || 'docker.io/library/officecli-platform' }}
       SECRET_NAME: ${{ secrets.PLATFORM_SECRET_NAME || vars.PLATFORM_SECRET_NAME || 'officecli-platform-env' }}
+      # First-time bootstrap: scripts/deploy-platform-prod.sh refuses to create the
+      # Deployment when it does not exist unless this is 1. Kept off by default so a
+      # mistyped namespace fails loudly instead of silently provisioning a new env.
+      ALLOW_PLATFORM_BOOTSTRAP: ${{ inputs.allow_bootstrap && '1' || '0' }}
       APP_ENV: ${{ vars.PLATFORM_APP_ENV || 'production' }}
       SITE_BASE_URL: ${{ vars.PLATFORM_SITE_BASE_URL || 'https://officecli.io' }}
       PLATFORM_BASE_URL: ${{ vars.PLATFORM_PLATFORM_BASE_URL || 'https://platform.officecli.io' }}
@@ -320,6 +329,23 @@ jobs:
         if: steps.target.outputs.should_run == 'true'
         working-directory: source
         run: ./scripts/deploy-platform-prod.sh "${RELEASE_TAG}"
+
+      - name: Verify deployment on the target host
+        if: steps.target.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # While a migration is in flight the public hostnames can still resolve to
+          # the old host, so "Verify production endpoints" below can be green without
+          # this deploy having worked. Probe the ClusterIP on the target host itself,
+          # which is the same path the deploy script asserts on rollouts.
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR platform-prod bash <<EOSSH
+            set -euo pipefail
+            ip=\$(sudo k3s kubectl -n ${KUBE_NAMESPACE} get service ${DEPLOYMENT_NAME} -o jsonpath='{.spec.clusterIP}')
+            echo "target host: \$(hostname), service ClusterIP: \${ip}"
+            curl -fsS "http://\${ip}/healthz" >/dev/null
+            echo "origin /healthz OK"
+          EOSSH
 
       - name: Verify production endpoints
         if: steps.target.outputs.should_run == 'true'
